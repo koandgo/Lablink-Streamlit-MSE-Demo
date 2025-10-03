@@ -182,28 +182,23 @@ def load_profiles_csv(csv_path: Path) -> pd.DataFrame:
 
 # ---------- Index build & persist ----------
 def consolidate_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Consolidate duplicates after merging CSV & JSON:
-    - Prefer rows with richer CSV content
-    - Group by a stable entity key (name_key if present else short_key)
-    """
     if df.empty:
-        return df
+        # Return a skeleton DataFrame with expected columns
+        return pd.DataFrame(columns=[
+            "Name", "Research summary", "pi history", "student history",
+            "key words", "link to lab site", "text", "source_file"
+        ])
 
-    # Create display Name preference: CSV Name > json_name
-    if "Name" not in df.columns:
-        df["Name"] = ""
-    if "json_name" not in df.columns:
-        df["json_name"] = ""
-
-    df["DisplayName"] = df["Name"].where(df["Name"].str.strip() != "", df["json_name"])
-
-    # score CSV richness to break ties
-    for col in ["Research summary", "pi history", "student history", "key words", "text"]:
+    # Ensure columns exist
+    for col in ["Name", "json_name", "Research summary", "pi history", "student history", "key words", "text", "source_file"]:
         if col not in df.columns:
             df[col] = ""
-        df[col] = df[col].fillna("").astype(str)
+        df[col] = df[col].astype(object).where(df[col].notna(), "").astype(str)
 
+    # Display name preference: CSV Name > JSON name
+    df["DisplayName"] = df["Name"].where(df["Name"].str.strip() != "", df["json_name"])
+
+    # CSV richness score
     df["__csv_len__"] = (
         df["Research summary"].str.len()
         + df["pi history"].str.len()
@@ -211,30 +206,38 @@ def consolidate_rows(df: pd.DataFrame) -> pd.DataFrame:
         + df["key words"].str.len()
     )
 
-    # entity key: prefer name_key, else short_key, else normalized DisplayName
-    df["__entity_key__"] = df["name_key"].where(df["name_key"].str.strip() != "", df.get("short_key", ""))
-    df["__entity_key__"] = df["__entity_key__"].where(df["__entity_key__"].str.strip() != "", df["DisplayName"].map(normalize_name))
+    # Robust entity key: name_key > short_key > normalized DisplayName
+    if "name_key" not in df.columns:
+        df["name_key"] = ""
+    if "short_key" not in df.columns:
+        df["short_key"] = ""
 
-    # For each entity, keep the row with the longest CSV content; merge text/source_file
+    df["__entity_key__"] = df["name_key"].where(df["name_key"].str.strip() != "", df["short_key"])
+    df["__entity_key__"] = df["__entity_key__"].where(
+        df["__entity_key__"].str.strip() != "",
+        df["DisplayName"].apply(normalize_name)
+    )
+
     def _agg(group: pd.DataFrame) -> pd.Series:
+        # Keep the row with most CSV content; merge JSON text/source across dupes
         best = group.sort_values(["__csv_len__", "DisplayName"], ascending=[False, True]).iloc[0].copy()
-        # concat JSON text across duplicates
-        all_texts = [t for t in group["text"].tolist() if isinstance(t, str) and t.strip()]
-        best["text"] = "; ".join(pd.Series(all_texts).dropna().unique())
-        # concat sources
-        all_srcs = [s for s in group.get("source_file", "").tolist() if isinstance(s, str) and s.strip()]
-        best["source_file"] = ", ".join(sorted(pd.Series(all_srcs).dropna().unique()))
+        # Merge JSON text
+        best["text"] = "; ".join(pd.Series([t for t in group["text"] if t.strip()]).dropna().unique())
+        # Merge sources
+        best["source_file"] = ", ".join(sorted(pd.Series([s for s in group["source_file"] if s.strip()]).dropna().unique()))
         return best
 
     out = (
-        df.groupby("__entity_key__", as_index=False)
+        df.groupby("__entity_key__", as_index=False, sort=False)
           .apply(_agg)
           .reset_index(drop=True)
     )
 
-    # Final columns
     out.rename(columns={"DisplayName": "Name"}, inplace=True)
-    out = out[["Name", "Research summary", "pi history", "student history", "key words", "link to lab site", "text", "source_file"]]
+    out = out[[
+        "Name", "Research summary", "pi history", "student history",
+        "key words", "link to lab site", "text", "source_file"
+    ]]
     return out
 
 def ensure_vectors_dir():
@@ -253,32 +256,59 @@ def save_index(vec: TfidfVectorizer, X: csr_matrix, corpus_df: pd.DataFrame):
     corpus_save.to_csv(VECTORS_DIR / "corpus.csv", index=False, encoding="utf-8")
 
 @st.cache_data(show_spinner=False)
-def build_corpus(json_df: pd.DataFrame, profiles_df: pd.DataFrame) -> Tuple[pd.DataFrame, TfidfVectorizer, csr_matrix]:
-    # Merge in two passes: strong key then secondary
+@st.cache_data(show_spinner=False)
+def build_corpus(json_df: pd.DataFrame, profiles_df: pd.DataFrame):
+    # Outer join on robust keys; both may be missing in one side, that's ok
+    for df in (profiles_df, json_df):
+        if "name_key" not in df.columns:
+            df["name_key"] = ""
+        if "short_key" not in df.columns:
+            df["short_key"] = ""
+
     merged = pd.merge(profiles_df, json_df, how="outer", on=["name_key", "short_key"])
+
+    # ---------- Consolidate duplicates & prefer CSV fields ----------
     merged = consolidate_rows(merged)
 
-    # build searchable doc
+    # ---------- Guarantee required columns & safe string dtypes ----------
+    required_cols = [
+        "Name", "Research summary", "pi history",
+        "student history", "key words", "link to lab site",
+        "text", "source_file"
+    ]
+    for col in required_cols:
+        if col not in merged.columns:
+            merged[col] = ""
+        # convert to pure python strings to keep .str happy across pandas versions
+        merged[col] = merged[col].astype(object).where(merged[col].notna(), "").astype(str)
+
+    # ---------- Build searchable doc ----------
     def make_doc(row) -> str:
         parts = [
-            row.get("Research summary", ""),
-            row.get("pi history", ""),
-            row.get("student history", ""),
-            row.get("key words", ""),
-            row.get("text", "")
+            row["Research summary"], row["pi history"], row["student history"],
+            row["key words"], row["text"]
         ]
-        return re.sub(r"\s+", " ", " ".join(p for p in parts if isinstance(p, str))).strip()
+        return re.sub(r"\s+", " ", " ".join([p for p in parts if p])).strip()
 
-    merged["__doc__"] = merged.apply(make_doc, axis=1)
-    merged = merged[merged["Name"].astype(str).str.strip() != ""].reset_index(drop=True)
-    merged = merged.drop_duplicates(subset=["Name"], keep="first").reset_index(drop=True)
+    merged["__doc__"] = merged.apply(make_doc, axis=1).astype(str)
 
+    # ---------- Filter out empties WITHOUT using .str on a bad dtype ----------
+    name_stripped = merged["Name"].apply(lambda x: str(x).strip())
+    doc_stripped = merged["__doc__"].apply(lambda x: str(x).strip())
+    merged = merged[(name_stripped != "") | (doc_stripped != "")].copy()
+
+    # De-dupe again by visible display name (use the first)
+    merged = merged.sort_values("Name").drop_duplicates(subset=["Name"], keep="first").reset_index(drop=True)
+
+    # ---------- Vectorize ----------
     vec = TfidfVectorizer(**VEC_OPTS)
     X = vec.fit_transform(merged["__doc__"].values) if len(merged) else csr_matrix((0, 1))
 
-    # persist artifacts outside Json/
+    # ---------- Persist index ----------
     save_index(vec, X, merged)
+
     return merged, vec, X
+
 
 
 # ---------- Ranking ----------
