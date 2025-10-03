@@ -200,7 +200,7 @@ def similarity_search(q: str, vectorizer: TfidfVectorizer, matrix: sp.csr_matrix
 # -------------------------
 # UI
 # -------------------------
-st.set_page_config(page_title="PI Match Finder", page_icon="🔎", layout="wide")
+st.set_page_config(page_title="Lablink", page_icon="🔎", layout="wide")
 
 st.title("🔎 PI Match Finder")
 st.caption("Build vectors from your **Json/** folder, then search by research interests.")
@@ -285,16 +285,9 @@ else:
     st.info("Enter your interests and click **Find Matches** to see results.")
 
 st.markdown("---")
-with st.expander("⚙️ Artifacts & How it works"):
+with st.expander("⚙️ How it works"):
     st.markdown(
         """
-- Vectors are saved in **vectors/** as:
-  - `tfidf.pkl` (the fitted `TfidfVectorizer`)
-  - `tfidf.npz` (sparse TF–IDF matrix, one row per JSON file)
-  - `metadata.json` (`names` list parallel to matrix rows)
-- JSONs are read from **Json/** and cleaned by removing URLs and any section containing the word *sorry*.
-- Results are ranked by cosine similarity.
-- The details shown in each expandable profile are pulled from **profiles_from_json.csv** by matching names (case-insensitive). Only these sections are displayed: **Research Summary**, **PI History**, **Student History**, **Key Words**, **Link to Lab Site**.
-- To force a rebuild, click **Rebuild vectors from Json/** in the sidebar.
+- Departmental and research group profiles are scraped using Apify and saved as JSON files in the **Json/** folder (one file per profile). Each file is then processed through a openai API to generated a concise PI summary. these are loaded in with the Jsons then used to generate a vector space. The users written info is then embedded and compared to the space to find the closest matches.
 """
     )
