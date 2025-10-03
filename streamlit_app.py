@@ -216,7 +216,7 @@ col_run, col_k = st.columns([1, 3])
 with col_run:
     run = st.button("Find Matches", type="primary")
 
-# Results
+# Results# Results
 if run and user_text.strip():
     q_clean = clean_text(user_text.strip())
     q_vec = vectorizer.transform([q_clean])
@@ -227,42 +227,39 @@ if run and user_text.strip():
     for rank, i in enumerate(idx, start=1):
         name_i = names[i]
         score = float(sims[i])
+
+        # strict CSV-only profile fields
         prof = profiles_map.get(normalize_name(name_i), {})
-        # Build a compact header line with score
-        header = f"{rank}. {name_i} — similarity: {score:.3f}"
+        research_summary = prof.get("research_summary", "")
+        pi_history       = prof.get("pi_history", "")
+        student_history  = prof.get("student_history", "")
+        key_words        = prof.get("key_words", "")
+        link_to_lab      = prof.get("link_to_lab", "")
+
+        # 1) Numbered header like "1) Tracy — similarity: 0.026"
+        header = f"{rank}) {name_i} — similarity: {score:.3f}"
         with st.expander(header, expanded=(rank == 1)):
-            # left: summary; right: details
-            c1, c2 = st.columns([2, 1], gap="large")
+            if research_summary:
+                st.markdown("**Research Summary**")
+                st.write(research_summary)
 
-            with c1:
-                if prof.get("research_summary"):
-                    st.markdown(f"**Research summary**\n\n{prof['research_summary']}")
-                # Show a snippet from JSON corpus for extra context
-                if not df_json.empty:
-                    try:
-                        txt = df_json.loc[df_json["name"].str.lower() == name_i.lower(), "text"].values
-                        if len(txt):
-                            snippet = txt[0][:800] + ("…" if len(txt[0]) > 800 else "")
-                            st.markdown("**From corpus (snippet):**")
-                            st.write(snippet)
-                    except Exception:
-                        pass
+            if pi_history:
+                st.markdown("**PI History**")
+                st.write(pi_history)
 
-            with c2:
-                if prof.get("pi_history"):
-                    st.markdown("**PI history**")
-                    st.write(prof["pi_history"])
-                if prof.get("student_history"):
-                    st.markdown("**Student history**")
-                    st.write(prof["student_history"])
-                if prof.get("key_words"):
-                    st.markdown("**Key words**")
-                    st.write(prof["key_words"])
-                if prof.get("link_to_lab"):
-                    st.markdown(f"[Lab site]({prof['link_to_lab']})")
+            if student_history:
+                st.markdown("**Student History**")
+                st.write(student_history)
+
+            if key_words:
+                st.markdown("**Key Words**")
+                st.write(key_words)
+
+            if link_to_lab:
+                st.markdown(f"**Link to Lab Site**")
+                st.markdown(f"[{link_to_lab}]({link_to_lab})")
 
     st.caption("Tip: click any name to toggle its profile.")
-
 else:
     st.info("Enter your interests above and click **Find Matches**.")
 
