@@ -262,7 +262,7 @@ if run and user_text.strip():
     st.caption("Tip: click any name to toggle its profile.")
 else:
     st.info("Enter your interests above and click **Find Matches**.")
-
+#
 # Footer
 st.markdown("---")
 st.caption(
