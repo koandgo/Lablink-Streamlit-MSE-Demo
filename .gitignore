@@ -1,0 +1,25 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual envs
+.venv/
+env/
+venv/
+
+# OS junk
+.DS_Store
+
+# Streamlit
+.streamlit/secrets.toml
+
+# App artifacts
+vectors/
+*.npz
+*.pkl
+metadata.json
+
+# Data (keep sample placeholders only)
+profiles_from_json.csv
+Json/*.json
