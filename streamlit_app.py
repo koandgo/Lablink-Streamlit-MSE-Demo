@@ -144,7 +144,10 @@ def load_profiles_csv(csv_path: Path) -> pd.DataFrame:
     df = pd.read_csv(csv_path, encoding="utf-8")
     # Trim headers and cells to avoid silent mismatches
     df.columns = [c.strip() for c in df.columns]
-    df = df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
+    # Column-wise safe trim without applymap (future-proof)
+    df = df.apply(lambda s: s.map(lambda x: x.strip() if isinstance(x, str) else x))
+
+
 
     cmap = {c.lower(): c for c in df.columns}
     def pick(*aliases, default=None):
@@ -369,55 +372,34 @@ with col_dbg:
 st.markdown("---")
 
 # Results
-if go:
-    if corpus_df.empty:
-        st.warning("No PI profiles found. Confirm `Json/` has JSON files and `profiles_from_json.csv` exists.")
-    else:
-        sims = rank(query, vec, X)
-        order = np.argsort(-sims)[:topk]
-        raw_scores = sims[order]
-        results = corpus_df.iloc[order].copy()
-        results["Cosine score"] = raw_scores
+# After: sims = rank(query, vec, X)
+order = np.argsort(-sims)[:topk]
+raw_scores = sims[order]
 
-        # Table
-        st.subheader("Top matches")
-        table_df = results[["Name", "Cosine score"]].reset_index(drop=True)
-        table_df.index = np.arange(1, len(table_df) + 1)
-        table_df.index.name = "Rank"
-        st.dataframe(table_df, use_container_width=True)
+# Build results and make sure index & lengths align before assigning
+results = corpus_df.iloc[order].copy().reset_index(drop=True)
 
-        # Expanders (numbered; no normalized score)
-        st.subheader("Profiles")
-        for rank_idx, (_, row) in enumerate(results.iterrows(), start=1):
-            name = row["Name"] if isinstance(row["Name"], str) and row["Name"].strip() else "(Unnamed PI)"
-            label = f"{rank_idx}) {name} — score: {row['Cosine score']:.4f}"
-            with st.expander(label, expanded=False):
-                c1, c2 = st.columns([2, 1])
-                with c1:
-                    if row.get("Research summary", ""):
-                        st.markdown("**Research summary**")
-                        st.write(row["Research summary"])
-                    if row.get("pi history", ""):
-                        st.markdown("**PI history**")
-                        st.write(row["pi history"])
-                    if row.get("student history", ""):
-                        st.markdown("**Student history**")
-                        st.write(row["student history"])
-                    if row.get("key words", ""):
-                        st.markdown("**Key words**")
-                        st.write(row["key words"])
+# Defensive alignment in case of any unexpected mismatch
+n = min(len(results), len(raw_scores))
+if len(results) != len(raw_scores):
+    # Trim both to the same 'n' to avoid broadcasting errors
+    results = results.iloc[:n].copy().reset_index(drop=True)
+    raw_scores = raw_scores[:n]
 
-                with c2:
-                    lab = str(row.get("link to lab site", "") or "").strip()
-                    if lab:
-                        st.markdown("**Lab site**")
-                        st.markdown(f"[{lab}]({lab})", unsafe_allow_html=True)
-                    src = str(row.get("source_file", "") or "").strip()
-                    if src:
-                        st.caption(f"Source JSON file(s): {src}")
+results["Cosine score"] = raw_scores
 
-                    with st.popover("Show cleaned JSON text"):
-                        st.write((row.get("text") or "").strip() or "(no JSON text)")
+# Summary table
+st.subheader("Top matches")
+table_df = results[["Name", "Cosine score"]].reset_index(drop=True)
+table_df.index = np.arange(1, len(table_df) + 1)
+table_df.index.name = "Rank"
+st.dataframe(table_df, use_container_width=True)
+
+# Expanders...
+for rank_idx, (_, row) in enumerate(results.iterrows(), start=1):
+    name = row["Name"] if isinstance(row["Name"], str) and row["Name"].strip() else "(Unnamed PI)"
+    label = f"{rank_idx}) {name} — score: {row['Cosine score']:.4f}"
+    # ...rest unchanged
 
 st.markdown("---")
 st.caption("Rebuilt each run. CSV fields prioritized; JSON enriches search. Index artifacts saved to ./vectors.")
