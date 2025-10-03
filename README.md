@@ -16,7 +16,7 @@ pip install -r requirements.txt
 ```
 
 ### 2) Add your data
-- Put PI JSON files into `Json/` (e.g., `Json/RUnocic.json`, `Json/KUnocic.json`).
+- Put PI JSON files into `Json/` .
 - Place `profiles_from_json.csv` at repo root. The app will read only the following fields:
   - `name` (or `Name`)
   - `Research Summary` (or common variants)
