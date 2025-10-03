@@ -202,7 +202,7 @@ def similarity_search(q: str, vectorizer: TfidfVectorizer, matrix: sp.csr_matrix
 # -------------------------
 st.set_page_config(page_title="Lablink", page_icon="🔎", layout="wide")
 
-st.title("🔎 PI Match Finder")
+st.title("🔎 Lablink")
 st.caption("Build vectors from your **Json/** folder, then search by research interests.")
 
 with st.sidebar:
@@ -288,6 +288,6 @@ st.markdown("---")
 with st.expander("⚙️ How it works"):
     st.markdown(
         """
-- Departmental and research group profiles are scraped using Apify and saved as JSON files in the **Json/** folder (one file per profile). Each file is then processed through a openai API to generated a concise PI summary. these are loaded in with the Jsons then used to generate a vector space. The users written info is then embedded and compared to the space to find the closest matches.
+- Public sites (departmental, research group, Orcid, Google Scholar)  are scraped using Apify and saved as JSON files in the **Json/** folder (one file per profile). Each file is then processed through a openai API to generated a concise PI summary. these are loaded in with the Jsons then used to generate a vector space. The users written info is then embedded and compared to the space to find the closest matches.
 """
     )
